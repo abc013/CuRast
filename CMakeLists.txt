@@ -1,6 +1,14 @@
 cmake_minimum_required(VERSION 3.5)
 
 set(TARGET_NAME CuRast) 
+
+# Give nvcc a writable temporary directory during compiler detection/configuration.
+if (CMAKE_HOST_WIN32)
+	set(CUDA_TEMP_DIR "${CMAKE_BINARY_DIR}/cuda-temp")
+	file(MAKE_DIRECTORY "${CUDA_TEMP_DIR}")
+	set(ENV{TEMP} "${CUDA_TEMP_DIR}")
+	set(ENV{TMP} "${CUDA_TEMP_DIR}")
+endif()
 project(${TARGET_NAME} LANGUAGES CXX CUDA)
 set(CMAKE_CXX_STANDARD 23)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -23,6 +31,8 @@ file(GLOB PROJECT_SOURCES CONFIGURE_DEPENDS
 
 add_executable(${TARGET_NAME} ${PROJECT_SOURCES})
 if (MSVC)
+	# MSBuild already initializes MSVC; avoid nvcc's temporary vcvars batch file.
+	target_link_options(${TARGET_NAME} PRIVATE "$<DEVICE_LINK:--use-local-env>")
 	target_compile_options(${TARGET_NAME} PRIVATE
 		$<$<COMPILE_LANGUAGE:CXX>:/Zc:preprocessor>
 		$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler /Zc:preprocessor>
@@ -45,9 +55,11 @@ target_include_directories(${TARGET_NAME} PRIVATE
 )
 
 add_subdirectory(libs/laszip)
+add_subdirectory(libs/meshoptimizer)
 target_link_libraries(${TARGET_NAME} PRIVATE 
 	${TURBOJPEG_LIBRARY}
 	laszip
+	meshoptimizer
 )
 
 # Add other third-party libs
