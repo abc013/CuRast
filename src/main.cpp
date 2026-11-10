@@ -31,7 +31,6 @@
 #include "MappedFile.h"
 #include "GLTFLoader.h"
 #include "LargeGlbLoader.h"
-#include "PlyLoader.h"
 #include "types.h"
 
 
