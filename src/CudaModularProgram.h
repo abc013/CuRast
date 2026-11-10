@@ -221,6 +221,7 @@ struct CudaModularProgram{
 	// CUfunction kernel = nullptr;
 	void* cubin = nullptr;
 	size_t cubinSize;
+	string cubinPath = "";
 
 	vector<std::function<void(void)>> compileCallbacks;
 
@@ -259,56 +260,18 @@ struct CudaModularProgram{
 		instances.push_back(this);
 	}
 
-	static CudaModularProgram* fromCubin(void* cubin, int64_t size){
-		CudaModularProgram* program = new CudaModularProgram();
-
-		program->cubin = cubin;
-		program->cubinSize = size;
-
-		cu_checked(cuModuleLoadData(&program->mod, cubin));
-
-		{ // Retrieve Kernels
-			uint32_t count = 0;
-			cuModuleGetFunctionCount(&count, program->mod);
-
-			vector<CUfunction> functions(count);
-			cuModuleEnumerateFunctions(functions.data(), count, program->mod);
-
-			program->kernelNames.clear();
-
-			for(CUfunction function : functions){
-				const char* name;
-
-				cuFuncGetName(&name, function);
-
-				string strName = name;
-
-				program->kernelNames.push_back(strName);
-				program->kernels[strName] = function;
-
-				CUevent event_start;
-				CUevent event_end;
-				cuEventCreate(&event_start, CU_EVENT_DEFAULT);
-				cuEventCreate(&event_end, CU_EVENT_DEFAULT);
-
-				program->events_launch_start[strName] = event_start;
-				program->events_launch_end[strName] = event_end;
-			}
-		}
-
-		return program;
-	}
-
 	void construct(CudaModularProgramArgs args){
 		vector<string> modulePaths = args.modules;
 
-		for(auto modulePath : modulePaths){
+		makeCacheCubinPath(modulePaths);
+		auto is_cache_fresh = isCacheFresh(modulePaths);
 
+		for(auto& modulePath : modulePaths){
 			string moduleName = fs::path(modulePath).filename().string();
 			CudaModule* module = new CudaModule(modulePath, moduleName);
 			module->defines = args.defines;
 
-			module->compile();
+			if (!is_cache_fresh) module->compile();
 
 			monitorFile(modulePath, [&, module]() {
 				module->compile();
@@ -318,7 +281,10 @@ struct CudaModularProgram{
 			modules.push_back(module);
 		}
 
-		link();
+		if(!is_cache_fresh)
+			link();
+		else
+			loadCubin();
 	}
 
 	void link(){
@@ -326,7 +292,7 @@ struct CudaModularProgram{
 		cout << "================================================================================" << endl;
 		cout << "=== LINKING" << endl;
 		cout << "================================================================================" << endl;
-		
+
 		auto tStart = now();
 
 		for(auto module : modules){
@@ -351,7 +317,7 @@ struct CudaModularProgram{
 		cuDeviceGetAttribute(&major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, cuDevice);
 		cuDeviceGetAttribute(&minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, cuDevice);
 
-		 int arch = major * 10 + minor;
+		int arch = major * 10 + minor;
 		//int arch = 86;
 		string strArch = std::format("-arch=sm_{}", arch);
 
@@ -369,8 +335,8 @@ struct CudaModularProgram{
 		nvJitLinkHandle handle;
 		nvJitLinkCreate(&handle, lopts.size(), lopts.data());
 
-		for(auto module : modules){
-			NVJITLINK_SAFE_CALL(handle, nvJitLinkAddData(handle, NVJITLINK_INPUT_LTOIR, (void *)module->ltoir, module->ltoirSize, module->name.c_str()));
+		for (auto module : modules) {
+			NVJITLINK_SAFE_CALL(handle, nvJitLinkAddData(handle, NVJITLINK_INPUT_LTOIR, (void*)module->ltoir, module->ltoirSize, module->name.c_str()));
 		}
 		NVJITLINK_SAFE_CALL(handle, nvJitLinkAddFile(handle, NVJITLINK_INPUT_ANY, CUDA_DEVRTLIB));
 
@@ -385,7 +351,55 @@ struct CudaModularProgram{
 		NVJITLINK_SAFE_CALL(handle, nvJitLinkGetLinkedCubin(handle, cubin));
 		NVJITLINK_SAFE_CALL(handle, nvJitLinkDestroy(&handle));
 
-		cu_checked(cuModuleLoadData(&mod, cubin));
+		cacheCubin();
+		loadCubin();
+
+		printElapsedTime("link duration: ", tStart);
+	}
+
+	bool isCacheFresh(vector<string> modulePaths){
+		namespace fs = std::filesystem;
+
+		std::error_code ec;
+		const auto cacheTime = fs::last_write_time(cubinPath, ec);
+		if(ec) return false; // Missing cache
+
+		for(const auto& modulePath : modulePaths){
+			const auto sourceTime = fs::last_write_time(modulePath, ec);
+
+			if(ec || sourceTime >= cacheTime) return false;
+		}
+
+		return true;
+	}
+
+	void makeCacheCubinPath(vector<string> modulePaths){
+		const auto cwd = std::filesystem::current_path();
+
+		std::string filename = "";
+		for(const auto& modulePath : modulePaths)
+			filename = filename + std::filesystem::path(modulePath).filename().string() + "_";
+
+		cubinPath = cwd.generic_string() + (filename + ".cubin");
+	}
+
+	void cacheCubin(){
+		std::ofstream out(cubinPath, std::ios::binary | std::ios::trunc);
+		if(!out) return;
+
+		out.write(static_cast<const char*>(cubin), static_cast<std::streamsize>(cubinSize));
+		out.close();
+
+		if(!out){
+			std::error_code ec;
+			fs::remove(cubinPath, ec);
+			return;
+		}
+	}
+
+	void loadCubin(){
+		printf("loading .cubin from cache: %s\n", cubinPath.c_str());
+		cu_checked(cuModuleLoad(&mod, cubinPath.c_str()));
 
 		{ // Retrieve Kernels
 			uint32_t count = 0;
@@ -421,10 +435,6 @@ struct CudaModularProgram{
 		for(auto& callback : compileCallbacks){
 			callback();
 		}
-
-		printElapsedTime("link duration: ", tStart);
-
-
 	}
 
 	CUdeviceptr getGlobalsPointer(string name){
