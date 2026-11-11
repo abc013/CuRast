@@ -4,13 +4,6 @@ cmake_minimum_required(VERSION 3.18)
 # # Main Project
 # --------------------------------------------------------
 set(TARGET_NAME CuRast)
-# This is to prevent CUDA probing from crashing
-if (CMAKE_HOST_WIN32)
-	set(CUDA_TEMP_DIR "${CMAKE_BINARY_DIR}/cuda-temp")
-	file(MAKE_DIRECTORY "${CUDA_TEMP_DIR}")
-	set(ENV{TEMP} "${CUDA_TEMP_DIR}")
-	set(ENV{TMP} "${CUDA_TEMP_DIR}")
-endif()
 project(${TARGET_NAME} LANGUAGES CXX CUDA)
 set(CMAKE_CXX_STANDARD 23)
 
@@ -29,8 +22,6 @@ file(GLOB PROJECT_SOURCES CONFIGURE_DEPENDS
 )
 add_executable(${TARGET_NAME} ${PROJECT_SOURCES})
 if (MSVC)
-	# MSBuild already initializes MSVC; reuse it during CUDA device linking.
-	target_link_options(${TARGET_NAME} PRIVATE "$<DEVICE_LINK:--use-local-env>")
 	target_compile_options(${TARGET_NAME} PRIVATE
 		$<$<COMPILE_LANGUAGE:CXX>:/Zc:preprocessor>
 		$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler /Zc:preprocessor>
@@ -43,6 +34,7 @@ target_compile_definitions(${TARGET_NAME} PUBLIC
 if (WIN32)
 	target_compile_definitions(${TARGET_NAME} PUBLIC
 		VK_USE_PLATFORM_WIN32_KHR
+		NOMINMAX
 	)
 
 	set_property(TARGET ${TARGET_NAME} PROPERTY
