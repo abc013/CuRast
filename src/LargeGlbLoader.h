@@ -12,7 +12,6 @@
 #include "MemoryManager.h"
 #include "CudaModularProgram.h"
 #include "ThreadPool.h"
-#include "CudaModularProgram.h"
 #include "Timer.h"
 #include "BitEdit.h"
 #include "kernels/textureTools.cuh"
