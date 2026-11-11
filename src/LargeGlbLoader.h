@@ -18,6 +18,7 @@
 #include "stb/stb_image_resize2.h"
 #include "CuRastSettings.h"
 #include "TextureManager.h"
+#include "ClusterLoD.h"
 
 
 using namespace std; // YOLO
@@ -239,6 +240,7 @@ namespace largeGlb{
 		bool skipVertexColors = false;
 		bool compress = false;
 		bool useJpegTextures = false;
+		bool generateClods = true;
 		int imageDivisionFactor = 1;
 	};
 
@@ -531,6 +533,8 @@ namespace largeGlb{
 					db.size = indexbufferByteSize;
 					db.index_min = index_min;
 					db.index_max = index_max;
+					assert(db.index_min == 0); // TODO WTH
+					assert(db.index_max == 0);
 					accessorToDevicebufferMapping[task.accessorIndex] = db;
 
 					size_indexbuffer_curast += indexbufferByteSize;
@@ -1190,6 +1194,9 @@ namespace largeGlb{
 					numUniqueVertices += mesh.numVertices;
 					numUniqueNodes++;
 					
+					if (config.generateClods) {
+						auto clod_mesh = ClusterLodMeshFactory::createClusterLodMesh(mesh);
+					}
 					loaded->meshes.push_back(mesh);
 				}
 

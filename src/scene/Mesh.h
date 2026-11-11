@@ -1,5 +1,6 @@
-
+#pragma once
 #include "VulkanCudaSharedMemory.h"
+#include "kernels/HostDeviceInterface.h"
 
 struct Mesh{
 	string name = "undefined";
