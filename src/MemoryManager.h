@@ -1,6 +1,7 @@
 #pragma once 
 
 #include "cuda.h"
+#include "CudaVirtualMemory.h"
 #include "VulkanCudaSharedMemory.h"
 
 // Usage flags are a strong contended for dumbest things in Vulkan. Just give me device memory...

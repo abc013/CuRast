@@ -9,6 +9,8 @@ public:
 
 struct ClusterLodContext {
 	ClusterLodMesh* mesh;
+	unsigned int* groupIndeces = nullptr;
+	size_t groupIndecesCount = 0;
 };
 
 class ClusterLodMeshFactory {
